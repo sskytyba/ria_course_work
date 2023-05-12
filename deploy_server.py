@@ -24,7 +24,7 @@ def make_app(regressor: FlatRegressor, version: int) -> tornado.web.Application:
 
 
 if __name__ == "__main__":
-    AsyncHTTPClient.configure("tornado.curl_httpclient.CurlAsyncHTTPClient", max_clients=100)
+    AsyncHTTPClient.configure("tornado.simple_httpclient.SimpleAsyncHTTPClient", max_clients=100)
     http_client = AsyncHTTPClient()
     model_version = int(open("model.version").readline().rstrip())
     regressor = FlatRegressor.load(MODEL_PATH)
