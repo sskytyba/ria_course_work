@@ -7,18 +7,19 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler, Binarizer
-from reg_stratified import y_bins, StratifiedKFoldReg
+from src.train.reg_stratified import y_bins, StratifiedKFoldReg
 import lightgbm as lgb
 import pandas as pd
 import numpy as np
+import re
 
 from sklearn.model_selection import ParameterGrid
 from sklearn.model_selection import ParameterSampler
 
 
-def build_data():
+def build_data(path='../../data/items_ria.json'):
     # load
-    original = pd.read_json('../../data/items_ria.json')
+    original = pd.read_json(path)
 
     # period to train on
     period_in_month = 6
@@ -46,6 +47,12 @@ def build_data():
 
 
 def create_features(df, features):
+    df['city_name_uk'] = df.city_name_uk.apply(lambda n: re.sub(r'\([^()]*\)', '', str(n)).strip())
+    df['city_name_uk'] = df.city_name_uk.apply(lambda n: 'Київ' if str(n) in ('Києво-Святошинський', 'Софіївська Борщагівка', 'Петропавлівська Борщагівка') else n)
+    df = df[df.groupby('city_name_uk').city_name_uk.transform('count') >= 5]
+
+    df = df[df.priceArr.map(lambda arr: len(arr.keys()) > 0)]
+
     df['has_metro'] = df.metro_station_id.notnull()
     features.remove('metro_station_id')
     features.append('has_metro')
@@ -70,6 +77,19 @@ def create_features(df, features):
     cols.remove('Елітна квартира')
     cols.remove('Оперативний показ')
     cols.remove('Можлива розстрочка')
+    cols.remove('З опаленням')
+    cols.remove('Преміум клас')
+    cols.remove('Престижний район')
+    cols.remove('Світла і простора')
+    cols.remove('Спокійний район')
+    cols.remove('Сучасний дизайн')
+    cols.remove('Територія під охороною')
+    cols.remove('Тихий двір')
+    cols.remove('У центрі')
+    cols.remove('Євроремонт')
+    cols.remove('Новий ремонт')
+
+    secondaryUtp['З ремонтом'] = secondaryUtp[['Євроремонт', 'З ремонтом', 'Новий ремонт']].max()
 
     df = pd.concat([df, secondaryUtp[cols]], axis=1)
     features.extend(cols)
@@ -101,6 +121,8 @@ def create_features(df, features):
     ]]
 
     # floor features
+    df['floor'] = df.floor.apply(lambda x: 40 if x > 40 else x)
+    df['floors_count'] = df.floors_count.apply(lambda x: 40 if x > 40 else x)
     df['last_floor'] = df.floor == df.floors_count
     features.append('last_floor')
     df['first_floor'] = (df.floor == 1) | (df.floor == 0)
@@ -111,8 +133,8 @@ def create_features(df, features):
     return df, features
 
 
-def abc():
-    df = build_data()
+def data(path='../../data/items_ria.json'):
+    df = build_data(path)
 
     features = [
         'wall_type_uk',
@@ -131,33 +153,23 @@ def abc():
     df, features = create_features(df, features)
 
     categorical_features = [
-        'floor',
         'wall_type_uk',
+        'floor',
         'city_name_uk',
-        'state_name_uk',
         'floors_count',
+        'total_square_meters',
+        'state_name_uk',
         'has_metro',
         'is_newbuild',
-        'Євроремонт',
         'З меблями',
-        'З опаленням',
         'З парковкою',
         'З ремонтом',
         'Кухня-студія',
         'Можна з тваринами',
-        'Новий ремонт',
         'Поруч з метро',
         'Поруч з парком',
         'Поруч зі школою',
         'Поруч із дитячим садком',
-        'Преміум клас',
-        'Престижний район',
-        'Світла і простора',
-        'Спокійний район',
-        'Сучасний дизайн',
-        'Територія під охороною',
-        'Тихий двір',
-        'У центрі',
         'rooms_count_size',
         'last_floor',
         'first_floor'
@@ -165,71 +177,19 @@ def abc():
 
     df[categorical_features] = df[categorical_features].astype('category')
 
-    print(df[features].iloc[0].to_json(force_ascii=False))
+    return df, features, categorical_features
 
 
 def train_model():
 
-    df = build_data()
-
-    features = [
-        'wall_type_uk',
-        'floor',
-        'living_square_meters',
-        'user_newbuild_id',
-        'rooms_count',
-        'city_name_uk',
-        'kitchen_square_meters',
-        'floors_count',
-        'total_square_meters',
-        'metro_station_id',
-        'state_name_uk'
-    ]
-
-    df, features = create_features(df, features)
-
-    categorical_features = [
-        'floor',
-        'wall_type_uk',
-        'city_name_uk',
-        'state_name_uk',
-        'floors_count',
-        'has_metro',
-        'is_newbuild',
-        'Євроремонт',
-        'З меблями',
-        'З опаленням',
-        'З парковкою',
-        'З ремонтом',
-        'Кухня-студія',
-        'Можна з тваринами',
-        'Новий ремонт',
-        'Поруч з метро',
-        'Поруч з парком',
-        'Поруч зі школою',
-        'Поруч із дитячим садком',
-        'Преміум клас',
-        'Престижний район',
-        'Світла і простора',
-        'Спокійний район',
-        'Сучасний дизайн',
-        'Територія під охороною',
-        'Тихий двір',
-        'У центрі',
-        'rooms_count_size',
-        'last_floor',
-        'first_floor'
-    ]
-
-    df[categorical_features] = df[categorical_features].astype('category')
+    df, features, categorical_features = data()
 
     # preparing price in single currency
     df = df[df.priceArr.map(lambda arr: len(arr.keys()) > 0)]
     price = df.priceArr.map(lambda arr: int(arr['1'].replace(' ', '')))
 
     # train, test split
-    X_train, X_test, y_train, y_test = train_test_split(df[features], price,
-                                                        test_size=0.2, random_state=42, stratify=y_bins(price, 100))
+    X_train, X_test, y_train, y_test = train_test_split(df[features], price, test_size=0.2, random_state=42, stratify=df.city_name_uk)
 
     # folds
     skf = StratifiedKFoldReg(shuffle=True, random_state=42)
@@ -342,9 +302,15 @@ def train_model():
     final_model = lgb.train(parameters, full_dataset, num_boost_round=num_boost_round)
     final_model.save_model("../../model/model.pkl", num_iteration=num_boost_round)
 
+    df['real_price'] = price
+    df['predict_price'] = np.expm1(final_model.predict(df[features]))
+    df['diff_per'] = np.abs(df['real_price'] - df['predict_price'])/df['real_price'] * 100
+
+    df.to_csv("../../data/items_ria_with_prediction.csv")
+
 
 def main():
-    abc()
+    train_model()
 
 
 if __name__ == '__main__':
